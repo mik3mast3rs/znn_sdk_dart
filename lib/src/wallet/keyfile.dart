@@ -1,11 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
-
-import 'package:argon2_ffi_base/argon2_ffi_base.dart';
 import 'package:cryptography/cryptography.dart';
 import 'package:cryptography/cryptography.dart' as cryptography;
 import 'package:hex/hex.dart';
-import 'package:znn_sdk_dart/src/argon2/argon2.dart';
+import 'package:znn_sdk_dart/src/argon2/argon2_helper.dart';
 import 'package:znn_sdk_dart/src/model/primitives.dart';
 import 'package:znn_sdk_dart/src/wallet/exceptions.dart';
 import 'package:znn_sdk_dart/src/wallet/keystore.dart';
@@ -36,15 +34,8 @@ class KeyFile {
 
   Future<KeyStore> decrypt(String password) async {
     try {
-      var key = initArgon2().argon2(Argon2Arguments(
-          Uint8List.fromList(utf8.encode(password)),
-          crypto!.argon2Params!.salt!,
-          64 * 1024,
-          1,
-          32,
-          4,
-          2,
-          13));
+      var key = await Argon2Helper(crypto!.argon2Params!.salt!)
+          .hashPasswordString(password);
       final algorithm = cryptography.AesGcm.with256bits();
       var entropy = await algorithm.decrypt(
           cryptography.SecretBox(
@@ -53,7 +44,7 @@ class KeyFile {
             mac: cryptography.Mac(crypto!.cipherData!.sublist(
                 crypto!.cipherData!.length - 16, crypto!.cipherData!.length)),
           ),
-          secretKey: cryptography.SecretKey(key),
+          secretKey: cryptography.SecretKey(key.rawBytes),
           aad: utf8.encode('zenon'));
 
       return KeyStore.fromEntropy(HEX.encode(entropy));
@@ -92,19 +83,10 @@ class KeyFile {
     var salt = Uint8List.fromList(salt_1.bytes);
     var nonce_1 = await cryptography.SecretKeyData.random(length: 12).extract();
     var nonce = Uint8List.fromList(nonce_1.bytes);
-    var key = initArgon2().argon2(Argon2Arguments(
-        Uint8List.fromList(utf8.encode(password)),
-        salt,
-        64 * 1024,
-        1,
-        32,
-        4,
-        2,
-        13));
-
+    var key = await Argon2Helper(salt).hashPasswordString(password);
     final algorithm = cryptography.AesGcm.with256bits();
     var encrypted = await algorithm.encrypt(HEX.decode(store.entropy),
-        secretKey: cryptography.SecretKey(key),
+        secretKey: cryptography.SecretKey(key.encodedBytes),
         nonce: nonce,
         aad: utf8.encode('zenon'));
     crypto!.cipherData =
